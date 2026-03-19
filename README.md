@@ -27,8 +27,20 @@
 
 ## Project setup
 
+1. Install dependencies:
 ```bash
 $ npm install
+```
+
+2. Create a `.env` file in the root directory and configure your Firebase Admin SDK credentials:
+```env
+# Production / PaaS Deployment
+FIREBASE_PROJECT_ID="your-firebase-project-id"
+FIREBASE_CLIENT_EMAIL="firebase-adminsdk-xxx@your-firebase-project-id.iam.gserviceaccount.com"
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# Alternatively for local development:
+# GOOGLE_APPLICATION_CREDENTIALS="./firebase-service-account.json"
 ```
 
 ## Compile and run the project
