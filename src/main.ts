@@ -7,6 +7,6 @@ async function bootstrap() {
   // Kích hoạt CORS để cho phép Web (hoặc Web Admin) gọi được API
   app.enableCors();
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 bootstrap();
