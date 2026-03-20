@@ -48,7 +48,7 @@ export class PaymentService {
   async handleWebhook(webhookBody: any) {
     this.logger.log('Received PayOS webhook');
     try {
-      const data = await this.payos.webhooks.verify(webhookBody);
+      const data = (this.payos as any).verifyPaymentWebhookData(webhookBody);
       
       if (data && data.code === '00') {
         const orderCode = data.orderCode;
