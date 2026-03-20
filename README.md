@@ -43,6 +43,23 @@ FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY----
 # GOOGLE_APPLICATION_CREDENTIALS="./firebase-service-account.json"
 ```
 
+3. Configure PayOS credentials for Checkout in `.env`:
+```env
+PAYOS_CLIENT_ID="your-client-id"
+PAYOS_API_KEY="your-api-key"
+PAYOS_CHECKSUM_KEY="your-checksum-key"
+```
+
+## Host Withdrawal Workflow
+
+The application supports host fund withdrawals through the following flow:
+1.  **Host** goes to **Host Dashboard** -> **Rút doanh thu**.
+2.  Host selects their Bank (e.g. Vietcombank, Techcombank), enters their Account Number, Account Name, and the amount to withdraw. The system validates the `amount` against their available balance (Total completed bookings revenue - Total withdrawn/pending withdrawals).
+3.  A withdrawal request is created in Firestore (`withdrawal_requests`) with status `pending`.
+4.  **Admin** goes to **Thanh toán & Doanh thu** -> **Rút tiền (Host)** to view all pending requests.
+5.  Admin manually transfers the money to the host.
+6.  Admin clicks **Duyệt & Đã CK**, which updates the status to `approved`, officially subtracting from the Host's available balance in future calculations.
+
 ## Compile and run the project
 
 ```bash
