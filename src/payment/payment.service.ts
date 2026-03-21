@@ -48,6 +48,12 @@ export class PaymentService {
   async handleWebhook(webhookBody: any) {
     this.logger.log('Received PayOS webhook');
     try {
+      // 🚨 DEBUG: Log the exact webhook payload to Firestore so we can inspect it remotely!
+      await this.firebaseService.getFirestore().collection('webhook_logs').add({
+        receivedAt: new Date(),
+        body: webhookBody || 'undefined'
+      });
+
       let data: any = null;
       
       // Step 1: Try verifying the webhook signature
@@ -55,17 +61,36 @@ export class PaymentService {
         data = (this.payos as any).verifyPaymentWebhookData(webhookBody);
       } catch (verifyError) {
         this.logger.error('Webhook signature verification failed', verifyError.message);
+        
+        await this.firebaseService.getFirestore().collection('webhook_logs').add({
+          receivedAt: new Date(),
+          error: verifyError.message,
+          step: 'verifySignature'
+        });
+
         // Fallback: Securely query PayOS API using the orderCode
         if ((webhookBody as any)?.data?.orderCode) {
           const orderCode = (webhookBody as any).data.orderCode;
           try {
             const info = await (this.payos as any).getPaymentLinkInformation(orderCode);
-            if (info && info.status === 'PAID') {
+            
+            await this.firebaseService.getFirestore().collection('webhook_logs').add({
+              receivedAt: new Date(),
+              infoStatus: info?.status || 'no_status',
+              step: 'apiFallback'
+            });
+
+            if (info && (info.status?.toString().toUpperCase() === 'PAID' || info.amountPaid > 0)) {
               this.logger.log(`Payment confirmed via API fallback for orderCode: ${orderCode}`);
               data = (webhookBody as any).data;
             }
           } catch (apiError) {
             this.logger.error('API Verification fallback failed', apiError.message);
+            await this.firebaseService.getFirestore().collection('webhook_logs').add({
+              receivedAt: new Date(),
+              error: apiError.message,
+              step: 'apiFallbackError'
+            });
           }
         }
       }
