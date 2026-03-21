@@ -58,7 +58,8 @@ export class PaymentService {
       
       // Step 1: Try verifying the webhook signature
       try {
-        data = (this.payos as any).verifyPaymentWebhookData(webhookBody);
+        // v2 uses await .webhooks.verify
+        data = await this.payos.webhooks.verify(webhookBody);
       } catch (verifyError) {
         this.logger.error('Webhook signature verification failed', verifyError.message);
         
@@ -72,7 +73,8 @@ export class PaymentService {
         if ((webhookBody as any)?.data?.orderCode) {
           const orderCode = (webhookBody as any).data.orderCode;
           try {
-            const info = await (this.payos as any).getPaymentLinkInformation(orderCode);
+            // v2 uses .paymentRequests.get
+            const info = await this.payos.paymentRequests.get(orderCode);
             
             await this.firebaseService.getFirestore().collection('webhook_logs').add({
               receivedAt: new Date(),
