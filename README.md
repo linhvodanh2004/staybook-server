@@ -1,127 +1,75 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Staybook Server (Backend)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## TL;DR
+- **What**: NestJS backend providing supplementary API services and background cron jobs for the Flutter `staybook` mobile app.
+- **Core Integrations**: Firebase Admin SDK (Firestore) and PayOS (Payment Gateway).
+- **Primary Roles**: Payment Link Generation, Webhook processing, and periodic background tasks (Cron Jobs).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## Tech Stack
+- **Framework**: NestJS (TypeScript)
+- **Database**: Firebase Admin SDK (interacts directly with the existing Firestore database used by the Flutter app)
+- **Payment Gateway**: `@payos/node` v2
+- **Task Scheduling**: `@nestjs/schedule`
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## Environment Setup
 
-1. Install dependencies:
-```bash
-$ npm install
-```
+Create a `.env` file in the root directory:
 
-2. Create a `.env` file in the root directory and configure your Firebase Admin SDK credentials:
 ```env
-# Production / PaaS Deployment
+# Firebase Admin Credentials (downloaded from Firebase Console)
 FIREBASE_PROJECT_ID="your-firebase-project-id"
-FIREBASE_CLIENT_EMAIL="firebase-adminsdk-xxx@your-firebase-project-id.iam.gserviceaccount.com"
+FIREBASE_CLIENT_EMAIL="firebase-adminsdk-xxx@your.iam.gserviceaccount.com"
+# Note: Ensure the private key is properly formatted with newline characters
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 
-# Alternatively for local development:
-# GOOGLE_APPLICATION_CREDENTIALS="./firebase-service-account.json"
-```
-
-3. Configure PayOS credentials for Checkout in `.env`:
-```env
+# PayOS API Keys (from my.payos.vn)
 PAYOS_CLIENT_ID="your-client-id"
 PAYOS_API_KEY="your-api-key"
 PAYOS_CHECKSUM_KEY="your-checksum-key"
 ```
 
-## Host Withdrawal Workflow
+---
 
-The application supports host fund withdrawals through the following flow:
-1.  **Host** goes to **Host Dashboard** -> **Rút doanh thu**.
-2.  Host selects their Bank (e.g. Vietcombank, Techcombank), enters their Account Number, Account Name, and the amount to withdraw. The system validates the `amount` against their available balance (Total completed bookings revenue - Total withdrawn/pending withdrawals).
-3.  A withdrawal request is created in Firestore (`withdrawal_requests`) with status `pending`.
-4.  **Admin** goes to **Thanh toán & Doanh thu** -> **Rút tiền (Host)** to view all pending requests.
-5.  Admin manually transfers the money to the host.
-6.  Admin clicks **Duyệt & Đã CK**, which updates the status to `approved`, officially subtracting from the Host's available balance in future calculations.
+## Key Features & Endpoints
 
-## Compile and run the project
+### 1. PayOS Integration
+The server acts as a secure intermediary for online payments via PayOS.
 
-```bash
-# development
-$ npm run start
+- **`POST /payment/create-payment-link`**:
+  Receives `bookingId`, `amount`, `returnUrl`, and `cancelUrl` from the mobile app. Uses the PayOS SDK to generate a secure checkout link (`checkoutUrl`) and returns it to the app. Also logs the generated `orderCode` and `paymentLinkId` into the Firestore `bookings` document.
+  
+- **`POST /payment/payos-webhook`**:
+  Listening endpoint for PayOS Webhooks. When a user successfully transfers money, PayOS triggers this endpoint. The server verifies the checksum signature using `verifyPaymentWebhookData()` to ensure authenticity, then automatically updates the booking status in Firestore to `paid`.
 
-# watch mode
-$ npm run start:dev
+### 2. Cron Jobs (Background Tasks)
+The server runs automated maintenance tasks on the Firestore database using `@nestjs/schedule`.
 
-# production mode
-$ npm run start:prod
-```
+- **`cancelCheckinOverdueBookings` (Runs every minute)**:
+  Scans for `pending` or `confirmed` bookings where the `checkIn` time has already passed. If the user failed to check-in or pay, the booking is automatically marked as `cancelled`.
+  
+- **`cancelExpiredBookings` (Runs every minute)**:
+  Scans for unpaid bookings (`pending`) that were created more than 24 hours ago. Automatically marks them as `cancelled` to free up the room for other guests.
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Running the Application
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Install dependencies
+npm install
+
+# Start development server
+npm run start:dev
+
+# Build for production
+npm run build
+npm run start:prod
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Deployment Notes
+- **Webhook Configuration**: When deploying (e.g., to Render, Heroku, AWS), ensure you copy your public domain and configure it in your PayOS Merchant Dashboard under API Settings -> Webhook URL (e.g., `https://your-domain.com/payment/payos-webhook`).
+- **Timezones**: Cron jobs run based on the server's local timezone. Configure your host's timezone to `Asia/Ho_Chi_Minh` for consistent booking execution if necessary.

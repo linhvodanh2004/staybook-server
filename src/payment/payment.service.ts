@@ -48,11 +48,32 @@ export class PaymentService {
   async handleWebhook(webhookBody: any) {
     this.logger.log('Received PayOS webhook');
     try {
-      const data = (this.payos as any).verifyPaymentWebhookData(webhookBody);
+      let data: any = null;
       
-      if (data && data.code === '00') {
+      // Step 1: Try verifying the webhook signature
+      try {
+        data = (this.payos as any).verifyPaymentWebhookData(webhookBody);
+      } catch (verifyError) {
+        this.logger.error('Webhook signature verification failed', verifyError.message);
+        // Fallback: Securely query PayOS API using the orderCode
+        if ((webhookBody as any)?.data?.orderCode) {
+          const orderCode = (webhookBody as any).data.orderCode;
+          try {
+            const info = await (this.payos as any).getPaymentLinkInformation(orderCode);
+            if (info && info.status === 'PAID') {
+              this.logger.log(`Payment confirmed via API fallback for orderCode: ${orderCode}`);
+              data = (webhookBody as any).data;
+            }
+          } catch (apiError) {
+            this.logger.error('API Verification fallback failed', apiError.message);
+          }
+        }
+      }
+      
+      // Step 2: Process the paid order if valid
+      if (data) {
         const orderCode = data.orderCode;
-        if (!orderCode) return { success: false, message: 'No order code' };
+        if (!orderCode) return { success: false, message: 'No order code in data' };
 
         const bookings = await this.firebaseService.getFirestore()
           .collection('bookings')
@@ -67,12 +88,17 @@ export class PaymentService {
           });
           this.logger.log(`Booking ${doc.id} paid successfully via PayOS`);
         } else {
-          this.logger.warn(`No booking found with orderCode ${orderCode}`);
+          this.logger.warn(`No booking found in Firestore with orderCode ${orderCode}`);
         }
+      } else {
+        this.logger.warn('Webhook data invalid or not PAID');
+        return { success: false, message: 'Webhook ignored' };
       }
+      
+      // Always return success: true to acknowledge receipt to PayOS (so they stop retrying)
       return { success: true };
     } catch (e) {
-      this.logger.error('Webhook verification failed', e);
+      this.logger.error('Webhook processing failed at root level', e);
       return { success: false, message: e.message };
     }
   }
